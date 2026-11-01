@@ -1,4 +1,6 @@
+#ifndef AppVersion
 #define AppVersion "1.0.0"
+#endif
 
 [Setup]
 AppId={{20E87304-B8CB-46D9-957D-CF5A88A972F9}
@@ -33,11 +35,16 @@ Name: "desktopicon"; Description: "Create desktop shortcuts"; GroupDescription: 
 [Files]
 Source: "dist\Dayclose.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "RELEASING.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD-PARTY.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "app.py"; DestDir: "{app}\source"; Flags: ignoreversion
 Source: "core.py"; DestDir: "{app}\source"; Flags: ignoreversion
 Source: "appearance.py"; DestDir: "{app}\source"; Flags: ignoreversion
+Source: "updater.py"; DestDir: "{app}\source"; Flags: ignoreversion
+Source: "version.py"; DestDir: "{app}\source"; Flags: ignoreversion
+Source: "release_meta.py"; DestDir: "{app}\source"; Flags: ignoreversion
+Source: "UpdateHelper.cs"; DestDir: "{app}\source"; Flags: ignoreversion
 Source: "assets\dayclose.ico"; DestDir: "{app}\source\assets"; Flags: ignoreversion
 Source: "requirements.txt"; DestDir: "{app}\source"; Flags: ignoreversion
 

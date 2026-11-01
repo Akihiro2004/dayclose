@@ -12,8 +12,13 @@ if (-not $Compiler -or -not (Test-Path -LiteralPath $Compiler)) {
     throw 'Install Inno Setup 6, or pass its ISCC.exe path using -Compiler.'
 }
 & (Join-Path $PSScriptRoot 'build.ps1')
-& $Compiler '/Qp' (Join-Path $PSScriptRoot 'installer.iss')
+$releaseVersion = python -c 'from version import APP_VERSION; print(APP_VERSION)'
+if ($LASTEXITCODE -ne 0) { throw 'Could not read app version' }
+& $Compiler '/Qp' "/DAppVersion=$releaseVersion" (Join-Path $PSScriptRoot 'installer.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
-Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'release\Dayclose-Setup-1.0.0.exe') -Algorithm SHA256 |
-    Format-List | Out-File -LiteralPath (Join-Path $PSScriptRoot 'release\SHA256.txt') -Encoding utf8
-Write-Host "Installer: $PSScriptRoot\release\Dayclose-Setup-1.0.0.exe"
+$installerName = "Dayclose-Setup-$releaseVersion.exe"
+$installerPath = Join-Path $PSScriptRoot "release\$installerName"
+$digest = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+"$digest  $installerName" | Set-Content -LiteralPath "$installerPath.sha256" -Encoding ascii
+"$digest  $installerName" | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'release\SHA256.txt') -Encoding ascii
+Write-Host "Installer: $installerPath"

@@ -70,6 +70,8 @@ QWidget#settingsPage { background: $panel; }
 QTabBar::tab { padding: 10px 18px; margin-right: 6px; margin-bottom: 8px; background: $button; border-radius: 8px; color: $secondary; }
 QTabBar::tab:selected { background: $accent; color: $primaryText; }
 QTabBar::tab:focus { border: 1px solid $muted; }
+QProgressBar { border: 1px solid $border; border-radius: 6px; background: $field; color: $text; text-align: center; min-height: 18px; }
+QProgressBar::chunk { background: $selectedBorder; border-radius: 5px; }
 '''
 
 

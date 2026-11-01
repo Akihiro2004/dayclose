@@ -13,9 +13,11 @@ from PyQt6.QtWidgets import (
     QApplication, QWidget, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QListWidget, QListWidgetItem, QPlainTextEdit,
     QLineEdit, QComboBox, QCheckBox, QTimeEdit, QMessageBox, QSplitter,
-    QSizePolicy, QStyledItemDelegate, QStyle, QAbstractSpinBox, QTabWidget, QFileDialog,
+    QSizePolicy, QStyledItemDelegate, QStyle, QAbstractSpinBox, QTabWidget, QFileDialog, QProgressBar,
 )
 from core import Reminder, Store, STATUSES
+from version import APP_VERSION
+from updater import UpdateController, UpdateError, RELEASES_URL, launch_helper
 
 from appearance import Appearance, MODES, SORT_ORDERS, DEFAULT_FILTERS, stylesheet
 
@@ -120,10 +122,11 @@ class ReminderDelegate(QStyledItemDelegate):
 
 
 class App(QWidget):
-    def __init__(self, store, review=False, dry_run=False, parent=None, appearance=None):
+    def __init__(self, store, review=False, dry_run=False, parent=None, appearance=None, updater=None):
         super().__init__(parent, Qt.WindowType.Window)
         self.store, self.review, self.dry_run = store, review, dry_run
         self.appearance = appearance or Appearance(store.path.parent / 'appearance.ini', self)
+        self.updater = updater
         self.items = {}
         self.children_windows = []
         self.sending = False
@@ -139,6 +142,9 @@ class App(QWidget):
         top = QHBoxLayout()
         top.addWidget(label('Dayclose', 'brand'))
         top.addStretch()
+        self.update_button = button('Update available', self.open_updates, 'primary')
+        self.update_button.hide()
+        top.addWidget(self.update_button)
         self.clock = label('', 'muted')
         top.addWidget(self.clock)
         top.addSpacing(18)
@@ -260,10 +266,25 @@ class App(QWidget):
         self.appearance.changed.connect(self.appearance_changed)
         self.refresh()
         self.appearance_changed()
+        if self.updater:
+            self.updater.changed.connect(self.update_notice)
+            self.update_notice()
+
+    def update_notice(self):
+        self.update_button.setVisible(self.updater.release is not None)
+        if self.updater.release:
+            self.update_button.setText(f'Update {self.updater.release.version}')
+
+    def open_updates(self):
+        dialog = SettingsPanel(self.store, self.appearance, self, self.updater)
+        dialog.tabs.setCurrentIndex(3)
+        dialog.exec()
+        dialog.deleteLater()
 
     def open_settings(self):
-        dialog = SettingsPanel(self.store, self.appearance, self)
+        dialog = SettingsPanel(self.store, self.appearance, self, self.updater)
         dialog.exec()
+        dialog.deleteLater()
 
     def appearance_changed(self):
         self.list_widget.viewport().update()
@@ -398,7 +419,7 @@ class App(QWidget):
         return self.new_window(False, self.dry_run)
 
     def new_window(self, review, dry_run):
-        window = App(self.store, review, dry_run, self, self.appearance)
+        window = App(self.store, review, dry_run, self, self.appearance, self.updater)
         self.children_windows.append(window)
         window.destroyed.connect(lambda: self.children_windows.remove(window) if window in self.children_windows else None)
         window.show()
@@ -428,8 +449,63 @@ class App(QWidget):
         super().closeEvent(event)
 
 
+class UpdatesPanel(QWidget):
+    def __init__(self, updater, parent=None):
+        super().__init__(parent)
+        self.updater = updater
+        self.setObjectName('settingsPage')
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 20, 22, 20)
+        layout.setSpacing(10)
+        layout.addWidget(label('Keep Dayclose up to date.', 'detailTitle'))
+        layout.addWidget(label(f'Installed version {APP_VERSION}', 'muted'))
+        self.status = label('', 'subtitle', True)
+        self.status.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(self.status)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setAccessibleName('Update download progress')
+        layout.addWidget(self.progress)
+        self.notes = QPlainTextEdit()
+        self.notes.setReadOnly(True)
+        self.notes.setAccessibleName('Release notes')
+        self.notes.setPlaceholderText('Release notes will appear here when an update is available.')
+        layout.addWidget(self.notes, 1)
+        actions = QHBoxLayout()
+        self.check_button = button('Check for updates', updater.check)
+        self.install_button = button('Download update', self.act, 'primary')
+        self.cancel_button = button('Cancel download', updater.cancel)
+        actions.addWidget(self.check_button)
+        actions.addWidget(self.install_button)
+        actions.addWidget(self.cancel_button)
+        layout.addLayout(actions)
+        layout.addWidget(button('View releases on GitHub', lambda: QDesktopServices.openUrl(QUrl(RELEASES_URL)), 'quiet'))
+        updater.changed.connect(self.refresh)
+        self.refresh()
+
+    def refresh(self):
+        update = self.updater
+        self.status.setText(update.message)
+        self.progress.setVisible(update.state == 'downloading')
+        self.progress.setValue(update.percent)
+        self.check_button.setEnabled(not update.busy)
+        self.install_button.setVisible(update.release is not None)
+        self.install_button.setEnabled(not update.busy)
+        self.install_button.setText('Install and restart' if update.installer else 'Download update')
+        self.cancel_button.setVisible(update.state == 'downloading')
+        notes = update.release.notes if update.release else ''
+        if self.notes.toPlainText() != notes:
+            self.notes.setPlainText(notes)
+
+    def act(self):
+        if self.updater.installer:
+            self.updater.install_ready.emit()
+        else:
+            self.updater.download()
+
+
 class SettingsPanel(QDialog):
-    def __init__(self, store, appearance, parent=None):
+    def __init__(self, store, appearance, parent=None, updater=None):
         super().__init__(parent)
         self.store, self.appearance = store, appearance
         self.setWindowTitle('Dayclose · Settings')
@@ -441,7 +517,7 @@ class SettingsPanel(QDialog):
         layout.setSpacing(16)
         layout.addWidget(label('Settings', 'heading'))
         layout.addWidget(label('A little more your way.', 'subtitle'))
-        tabs = QTabWidget()
+        tabs = self.tabs = QTabWidget()
         tabs.setAccessibleName('Settings categories')
         layout.addWidget(tabs, 1)
         appearance_page, library_page, data_page = QWidget(), QWidget(), QWidget()
@@ -450,6 +526,10 @@ class SettingsPanel(QDialog):
         tabs.addTab(appearance_page, 'Appearance')
         tabs.addTab(library_page, 'Library')
         tabs.addTab(data_page, 'Data')
+        if updater is None:
+            updater = UpdateController(store.path.parent, self)
+        self.updates_panel = UpdatesPanel(updater, self)
+        tabs.addTab(self.updates_panel, 'Updates')
         appearance_layout = QVBoxLayout(appearance_page)
         appearance_layout.setContentsMargins(22, 24, 22, 22)
         appearance_layout.setSpacing(12)
@@ -492,7 +572,7 @@ class SettingsPanel(QDialog):
         data_layout.addWidget(label('A backup contains reminders, statuses, schedules, and notes. Appearance and library preferences remain in the settings file.', 'muted', True))
         data_layout.addStretch()
         footer = QHBoxLayout()
-        self.saved_label = label('Dayclose 1.0.0 · Changes save automatically', 'muted')
+        self.saved_label = label(f'Dayclose {APP_VERSION} · Changes save automatically', 'muted')
         footer.addWidget(self.saved_label)
         footer.addStretch()
         footer.addWidget(button('Done', self.accept, 'primary'))
@@ -520,7 +600,7 @@ class SettingsPanel(QDialog):
         try:
             self.appearance.update(self.mode_combo.currentText(), self.sort_combo.currentText(),
                                    self.filter_combo.currentText(), self.preview_check.isChecked())
-            self.saved_label.setText('Dayclose 1.0.0 · Changes saved')
+            self.saved_label.setText(f'Dayclose {APP_VERSION} · Changes saved')
         except (ValueError, OSError) as error:
             self.sync_controls()
             QMessageBox.warning(self, 'Could not save settings', str(error))
@@ -643,7 +723,34 @@ def main():
     store = None
     try:
         store = Store(folder / 'reminders.db')
-        window = App(store, args.shutdown, args.dry_run)
+        updater = UpdateController(folder, application)
+        window = App(store, args.shutdown, args.dry_run, updater=updater)
+        def install_update():
+            if not updater.installer or not updater.release:
+                return
+            if any(isinstance(widget, Editor) and widget.isVisible() for widget in application.topLevelWidgets()):
+                QMessageBox.information(window, 'Save your reminder first', 'Save or close all reminder editors before installing an update.')
+                return
+            if QMessageBox.question(window, 'Install update and restart?',
+                    f'Install Dayclose {updater.release.version}? Dayclose will close and reopen after installation. Your reminders and settings will be kept.',
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                if not getattr(sys, 'frozen', False):
+                    raise UpdateError('Use the packaged Dayclose app to install updates. Source mode can check and download updates.')
+                updater.folder.mkdir(parents=True, exist_ok=True)
+                store.backup(updater.folder / f'pre-update-{datetime.now():%Y%m%d-%H%M%S}.db')
+                window.appearance.settings.sync()
+                launch_helper(updater.installer, updater.release, updater.folder, args.dry_run)
+            except (OSError, ValueError, sqlite3.Error, UpdateError) as error:
+                window.error(error)
+                return
+            application.quit()
+        updater.install_ready.connect(install_update)
+        application.aboutToQuit.connect(updater.stop)
+        if not args.shutdown:
+            QTimer.singleShot(1500, updater.check)
         window.show()
         application.exec()
     except (OSError, ValueError, sqlite3.Error) as error:

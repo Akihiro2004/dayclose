@@ -41,6 +41,18 @@ Use the search field to find reminder titles or notes, and the status menu to
 filter Active, Paused, or Completed reminders. Shutdown review always shows all
 currently due reminders, independent of the manager's filters.
 
+## In-app updates
+
+The manager checks GitHub on startup and shows a notice when a higher stable
+version is available. Open **Settings > Updates** to check manually, read release
+notes, download the installer, and choose **Install and restart**. The app keeps
+your reminders and settings, backs up the reminder database, and reopens after
+installation. Downloads are checked against the release SHA-256 checksum.
+
+Public checks require `Akihiro2004/dayclose` to be public with a published release.
+The current version remains 1.0.0. Future update releases need higher versions.
+See [RELEASING.md](RELEASING.md) for publishing and testing instructions.
+
 ## Reminder rules
 
 - **Active**: appears in shutdown review when inside its time window.
@@ -55,7 +67,8 @@ currently due reminders, independent of the manager's filters.
 - Status and reminder edits save immediately. Completing an item is permanent until you reactivate it.
 
 This version uses daily times, not calendar date ranges or per-weekday schedules.
-It has no background service, automatic shutdown, cloud account, or network access.
+It has no background service, automatic shutdown, or cloud account. Update checks
+and installer downloads contact GitHub; reminder contents are never sent.
 Windows' regular Shut down button bypasses this application.
 
 ## Storage
